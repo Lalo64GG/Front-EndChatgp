@@ -1,0 +1,151 @@
+import React, { useState } from 'react';
+import { pdfjs } from 'react-pdf';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+
+function App() {
+  const [file, setFile] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+
+  const handleInputChange = (event) => {
+    setInputValue(event.target.value);
+  };
+
+  const handleSendMessage = () => {
+    if (inputValue.trim() === '') return;
+
+    const newMessage = { body: inputValue, from: 'Me' };
+    setMessages(prevMessages => [...prevMessages, newMessage]);
+    sendDataToServer(inputValue);; // Enviar el mensaje de texto directamente
+    setInputValue('');
+  };
+
+  const handleFileChange = (event) => {
+    const selectedFile = event.target.files[0];
+    setFile(selectedFile);
+  };
+
+  const extractTextFromPDF = async () => {
+    if (!file) {
+      console.error('No se ha seleccionado ningún archivo PDF.');
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async function (event) {
+        const typedArray = new Uint8Array(event.target.result);
+        const pdf = await pdfjs.getDocument(typedArray).promise;
+
+        let text = '';
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const pageText = await page.getTextContent();
+          pageText.items.forEach((item) => {
+            text += item.str + ' ';
+          });
+        }
+
+        // Enviar el texto extraído del PDF al servidor
+        filUpdate(text);
+      };
+
+      reader.readAsArrayBuffer(file);
+    } catch (error) {
+      console.error('Error al extraer texto del PDF:', error);
+    }
+  };
+
+  const filUpdate = async(text) => {
+    try {
+      const response = await fetch("http://localhost:3000/updatePdfPrompt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ text: text})
+      })
+      const responseData = await response.json();
+      console.log(responseData);
+    } catch (error) {
+      console.error(error);
+    }
+  } 
+
+  const sendDataToServer = async (prompt)  => {
+    const url = 'http://localhost:3000/chat';
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ prompt: prompt }),
+      });
+
+      const responseData = await response.json();
+      console.log(responseData);
+
+      const newMessage = { body: responseData.message.content}; // Utilizar responseData.content en lugar de responseData.message.content
+      setMessages(prevMessages => [...prevMessages, newMessage]);
+    } catch (error) {
+      console.error('Error al enviar los datos:', error);
+    }
+  };
+
+  return (
+    <div className="max-w-lg mx-auto p-4 w-full">
+      <ul className='text-white  overflow-auto px-4 w-full'>
+        {messages.map((message, i) => (
+          <li key={i} className={`my-2 p-2 table rounded-md ${message.from === 'Me' ? 'bg-sky-700' : ' bg-slate-800 ml-auto'}`}>
+            <span className='text-xs text-slate-300 block'>{message.from}</span> 
+            <span className='text-md'>{message.body}</span>
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex items-center space-x-2 mt-4">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={handleInputChange}
+          placeholder="Escribe tu mensaje..."
+          className="flex-grow border border-gray-300 rounded-l-md px-4 py-2"
+        />
+        <button
+          onClick={handleSendMessage}
+          className="bg-blue-500 text-white px-4 py-2 rounded-r-md"
+        >
+          Enviar
+        </button>
+        <label htmlFor="fileInput" className="cursor-pointer">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            className="h-6 w-6 text-blue-500"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M2 4a2 2 0 012-2h14a2 2 0 012 2v14a2 2 0 01-2 2H4a2 2 0 01-2-2V4zm2-1a1 1 0 00-1 1v12a1 1 0 001 1h14a1 1 0 001-1V4a1 1 0 00-1-1H4z"
+              clipRule="evenodd"
+            />
+            <path
+              fillRule="evenodd"
+              d="M10 6a1 1 0 011 1v5a1 1 0 11-2 0V7a1 1 0 011-1zm0 8a1 1 0 100-2 1 1 0 000 2z"
+              clipRule="evenodd"
+            />
+          </svg>
+        </label>
+        <input type="file" id="fileInput" onChange={handleFileChange} accept=".pdf" className="hidden" />
+        <button onClick={extractTextFromPDF} className="bg-blue-500 text-white px-4 py-2 rounded-md">
+          Extraer texto del PDF
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default App;
